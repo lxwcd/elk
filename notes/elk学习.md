@@ -318,3 +318,53 @@ Birth: 2023-07-09 14:32:03.775167501 +0800
 
 
 - 默认 `input_type` 为 `filestream`
+
+
+# Logstash
+> [Logstash](https://www.elastic.co/guide/en/logstash/current/introduction.html)
+
+
+## 安装
+
+- 从镜像网站下载安装包
+> [logstash](https://mirrors.tuna.tsinghua.edu.cn/elasticstack/apt/8.x/pool/main/l/logstash/)
+
+```bash
+[root@logstash src]$ wget https://mirrors.tuna.tsinghua.edu.cn/elasticstack/apt/8.x/pool/main/l/logstash/logstash-8.8.2-amd64.deb
+```
+
+- 安装 
+```bash
+[root@logstash src]$ dpkg -i logstash-8.8.2-amd64.deb
+```
+
+- 为 logstash 创建软连接
+```bash
+
+```
+
+
+## Logstash 命令
+
+`logstash --help` 查看帮助，需要等一段时间
+### logstatsh -f
+指定 `.conf` 配置文件，要指明绝对路径，相对路径是相对于 `/usr/share/logstash` 的路径而非当前路径
+
+
+## Input 插件
+> [Input plugins](https://www.elastic.co/guide/en/logstash/8.8/input-plugins.html)
+
+
+## Filter 插件
+> [Filter plugins](https://www.elastic.co/guide/en/logstash/current/filter-plugins.html)
+
+
+### Grok 插件
+> [Grok](https://www.elastic.co/guide/en/logstash/current/plugins-filters-grok.html#_description_136)
+> [Do you grok Grok](https://www.elastic.co/cn/blog/do-you-grok-grok)
+
+
+- Grok 可以将日志文件的内容解析为特定结构的内容，如 json 格式的数据
+> Grok is a great way to parse unstructured log data into something structured and queryable.
+
+- Logstash 提供了约 120 种 grok 模式，也可以自己定义模式
