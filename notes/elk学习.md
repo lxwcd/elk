@@ -234,20 +234,82 @@ Threads:        8
 
 
 ### How does Filebeat keep the state of files
-- Filebeat keeps the state of each file and frequently flushes the state to disk in the registry file
-
-- The state is usesd to remember the last offset a harvester was reading from and to ensure all log lines are sent 
-
-- While Filebeat is running, the state information is also kept in memory for each input
+1. Filebeat 记录每个文件的状态信息
+> Filebeat keeps the state of each file and frequently flushes the state to disk in the registry file
+> The state is usesd to remember the last offset a harvester was reading from and to ensure all log lines are sent 
+> While Filebeat is running, the state information is also kept in memory for each input
 
 Filebeat 会跟踪文件的状态并且记住 harvester 最后读取的行的 offset，因此如果 Filebeat 和 Elasticsearch 或 Logstash 断开连接，下次恢复通信后能接着之前的读的位置继续日志文件
+
+注意 registry file 不要太大：[Regisry file is too large](https://www.elastic.co/guide/en/beats/filebeat/current/reduce-registry-size.html)
+
+registry file 的路径：
 ```bash
 [root@docker filebeat]$ ls /var/lib/filebeat/registry/filebeat/log.json
 /var/lib/filebeat/registry/filebeat/log.json
 ```
 
-- For each file, Filebeat stores unique identifiers to detect whether a file was harvested previously
+部分内容如下：
+```bash
+{
+  "k": "filestream::nginx-error-log::native::3703423-64768",
+  "v": {
+    "cursor": {
+      "offset": 2257
+    },
+    "meta": {
+      "source": "/docker-02/web/nginx/logs/error.log",
+      "identifier_name": "native"
+    },
+    "ttl": 1800000000000,
+    "updated": [
+      2062294143957,
+      1688911593
+    ]
+  }
+}
+```
+- Key (`k`): `"filestream::nginx-error-log::native::3703423-64768"`
+  - This is the unique identifier for the file tracked by Filebeat. 
+    It includes information such as the filestream type (`filestream`), 
+    the identifier name (`native`), and other details specific to the log file.
+- Value (`v`):
+  - `cursor`: 
+    - `offset`: 2257
+      - This represents the offset or position in the file where Filebeat last read. 
+  - `meta`:
+    - `source`: "/docker-02/web/nginx/logs/error.log"
+      - This specifies the path or source of the file being monitored. 
+    - `identifier_name`: "native"
+      - This identifies the source or type of the file. 
+  - `ttl`: 1800000000000
+    - This indicates the time-to-live value for the record. 
+  - `updated`:
+    - [2062294143957, 1688911593]
+      - These are timestamp values representing the last time the record was updated. 
+        The first value is the high-resolution timestamp, while the second value is the Unix timestamp.
 
+
+2. For each file, Filebeat stores unique identifiers to detect whether a file was harvested previously
+
+Filebeat 通过 inode 和 device 来跟踪一个文件，因此一旦 Filebeat 开始 harvesting 一个文件，就会记器其 inode number，即使后面文件名被修改甚至删除，Filebeat can still continue to harvest and read it as long as the file descriptor remains open
+
+查看文件的 inode 和 device：
+```bash
+[root@docker filebeat]$ stat log.json
+  File: log.json
+  Size: 49408           Blocks: 112        IO Block: 4096   regular file
+Device: fd00h/64768d    Inode: 6204255     Links: 1
+Access: (0600/-rw-------)  Uid: (    0/    root)   Gid: (    0/    root)
+Access: 2023-07-11 10:25:14.693354468 +0800
+Modify: 2023-07-11 10:18:13.652004008 +0800
+Change: 2023-07-11 10:18:13.652004008 +0800
+Birth: 2023-07-09 14:32:03.775167501 +0800
+```
+
+
+
+注意，如果一个文件被删了，然后新建一个文件的 inode 和旧文件相同，可能造成 Filebeat 认为新文件和旧文件相同，见说明：[Inode reuse causes Filebeat to skip lines](https://www.elastic.co/guide/en/beats/filebeat/current/inode-reuse-issue.html)
 
 ## 配置 
 
