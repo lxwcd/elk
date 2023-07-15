@@ -411,6 +411,34 @@ Each primary stage will not complete until the in-sync replicas have finished in
 > [Basic read model](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-replication.html#_basic_read_model)
 
 
+### 读请求处理过程
+- When a read request is received by a node, that node is responsible for forwarding it to the nodes that hold the relevant shards, collating the responses, and responding to the client.
+
+当一个有 cooridinating 角色的节点收到读请求，而读操作涉及到从不同的节点获取 shards 的数据时，the node is responsible for forwarding the request to the relavant shard-holding nodes，从其他有分片的节点处收集到数据进行整合，最后响应客户端最终的结果
+
+
+### 分片选择
+- By default, Elasticsearch uses adaptive replica selection to select the shard copies.
+一般一个分片会在其他节点上有 replica，默认 elasticsearch 使用 [Adaptive replica selection](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-shard-routing.html#search-adaptive-replica) 来选择从哪个分片进行读取，因为 primary 和 replica 分片都能提供读服务
+
+
+- 如果一个分片读取失败，coordinating node 将向有其他分片的节点发送请求
+为了保证快速响应，有些 API 会提供当一个或多个分片无法响应时仍返回部分结果：Search，Multi Search，Multi Get
+
+
+### 读取失败情况
+> [Failures](https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-replication.html#_failures)
+
+
+- primary 分片会等全部 in -sync 副本分片复制成功，因此如果有一个分片速度很慢，可能会影响 indexing 速度
+
+- dirty reads
+The primary shard becomes isolated but is not immediately aware of this isolation，因此 primary shard 和 replica shards 无法通信但仍然执行写操作
+
+when a concurrent read request is made after the write operation has been indexed on the isolated primary shard but before the primary shard realizes it is isolated and syncs with the replicas or master. In this scenario, the read request may retrieve the data from the isolated primary shard, leading to inconsistencies or data loss.
+
+Elasticsearch mitigates this risk by pinging the master every second (by default) and rejecting indexing operations if no master is known.
+
 
 # 集群健康状态
 ## green
@@ -422,8 +450,6 @@ Each primary stage will not complete until the in-sync replicas have finished in
 
 
 
-# ES 文档路由
-replica shards location
 
 
 # 安装
