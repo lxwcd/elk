@@ -41,7 +41,8 @@ ELK 学习
 - near-real-time--within 1 second search
 > Elasticsearch uses a data structure called an inverted index that supports very fast full-text searches.
 
-## inverted index 
+## elasticsearch 介绍
+### inverted index 
 > CS124 information retrieval 视频介绍：[information retrieval](https://www.youtube.com/watch?v=kNkCfaH2rxc&list=PLaZQkZp6WhWwoDuD6pQCmgVyDbUWl_ZUi&ab_channel=FromLanguagestoInformation)
 > [CS 124: From Languages to Information](https://web.stanford.edu/class/cs124/)
 > 科普文章：[inverted index](https://www.geeksforgeeks.org/inverted-index/)
@@ -75,7 +76,7 @@ indexing is the process of adding documents to Elasticsearch, while querying inv
 维基百科介绍：[Inverted index](https://en.wikipedia.org/wiki/Inverted_index)
 
 
-## Data in: documents and indices
+### Data in: documents and indices
 
 - An index can be thought of as an optimized collection of documents and each document is a collection of fields, which are the key-value pairs that contains your data.
 
@@ -90,7 +91,7 @@ The ability to use the per-field data structures to assemble and return search r
 一个 document 中可以有多个不同的 fields，且允许 dynamic mapping，即 elasticsearch 能自动检测并添加新的 field
 
 
-## Scalability and resilience: cluster, nodes, and shards
+### Scalability and resilience: cluster, nodes, and shards
 
 - Elasticsearch is built to be always available and to scale with your needs. It does this by being distributed by nature.
 
@@ -106,9 +107,331 @@ The index on the primary cluster is the active leader index and handles all writ
 Indeices replicated to secondary clusters are read-only followers.
 
 
-## Secure, manage and monitor elasticsearch cluster
+### Secure, manage and monitor elasticsearch cluster
 - Kibana can manage a cluster
 - [index lifecycle management](https://www.elastic.co/guide/en/elasticsearch/reference/current/index-lifecycle-management.html) can manage data over time
+
+
+## elasticsearch 安装
+
+
+## 包安装
+> [官方安装说明](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/deb.html)
+
+
+环境：ubuntu22.04 虚拟机，3G 内存，2核
+
+- wget 从镜像网站下载 .deb 包
+清华大学镜像网站：[elasticsearch](https://mirrors.tuna.tsinghua.edu.cn/elasticstack/8.x/apt/pool/main/e/elasticsearch/)
+
+- dpkg -i 安装
+```bash
+[root@es-1 src]$ dpkg -i elasticsearch-8.8.2-amd64.deb
+```
+
+### 优化配置
+
+- 实验环境需要修改 JVM heap size
+编辑 `/etc/elasticsearch/jvm.options`
+```bash
+################################################################
+## IMPORTANT: JVM heap size
+################################################################
+##
+## The heap size is automatically configured by Elasticsearch
+## based on the available memory in your system and the roles
+## each node is configured to fulfill. If specifying heap is
+## required, it should be done through a file in jvm.options.d,
+## which should be named with .options suffix, and the min and
+## max should be set to the same value. For example, to set the
+## heap to 4 GB, create a new file in the jvm.options.d
+## directory containing these lines:
+##
+-Xms512m
+-Xmx512m
+```
+
+- 关闭 xpack 功能
+编辑 `/etc/elasticsearch/elasticsearch.yml`
+
+```bash
+# Enable security features
+xpack.security.enabled: false
+```
+
+### 开启服务
+```bash
+[root@es-1 src]$ systemctl daemon-reload
+[root@es-1 src]$ systemctl enable --now elasticsearch.service
+```
+
+### 验证
+- `ss -ntl` 看到 9200 的端口打开
+- curl 访问 9200 端口
+```bash
+[root@es-1 src]$ curl http://127.0.0.1:9200/
+{
+  "name" : "es-1",
+  "cluster_name" : "elasticsearch",
+  "cluster_uuid" : "8L0Gmyj4RkGMS8taazKr7g",
+  "version" : {
+    "number" : "8.8.2",
+    "build_flavor" : "default",
+    "build_type" : "deb",
+    "build_hash" : "98e1271edf932a480e4262a471281f1ee295ce6b",
+    "build_date" : "2023-06-26T05:16:16.196344851Z",
+    "build_snapshot" : false,
+    "lucene_version" : "9.6.0",
+    "minimum_wire_compatibility_version" : "7.17.0",
+    "minimum_index_compatibility_version" : "7.0.0"
+  },
+  "tagline" : "You Know, for Search"
+}
+```
+
+## docker 部署 ES 集群
+> [Install Elasticsearch with Docker](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/docker.html)
+
+
+根据官方提示，要用 docker 安装多节点集群，至少需要 4G 内存
+
+实验环境：ubunt22.04 虚拟机，安装 eleasticsearch 集群，8G 内存，2核
+
+
+### 安装前准备
+- 禁用 swap 
+编辑 /etc/fstab 将 swap 的行注释
+```bash
+# /etc/fstab: static file system information.
+#
+# device; this may be used with UUID= as a more robust way to name devices
+# that works even if disks are added and removed. See fstab(5).
+#
+# <file system> <mount point>   <type>  <options>       <dump>  <pass>
+# / was on /dev/ubuntu-vg/ubuntu-lv during curtin installation
+/dev/disk/by-id/dm-uuid-LVM-aL2z4qRF6RP6ygmuXVQ89hX7MrChz0jPApnaIZ1WSFWWkEAhejDEX9zi7SrwDOep / ext4 defaults 0 1
+# /boot was on /dev/sda2 during curtin installation
+/dev/disk/by-uuid/f81cc5f3-9189-4a0c-b53a-f67110325cc7 /boot ext4 defaults 0 1
+# /swap.img	none	swap	sw	0	0
+```
+
+使配置生效：
+```bash
+[root@es docker]$ swapoff -a
+```
+
+查看内存：
+```bash
+[root@es docker]$ free -h
+               total        used        free      shared  buff/cache   available
+Mem:           7.7Gi       3.1Gi       3.6Gi       1.0Mi       1.1Gi       4.2Gi
+Swap:             0B          0B          0B
+```
+
+
+- 安装前先修改宿主机中的内核参数
+```bash
+[root@es-cluster ~]$ cat /proc/sys/vm/max_map_count
+65530
+[root@es-cluster ~]$ echo "vm.max_map_count=262144" >> /etc/sysctl.conf
+[root@es-cluster ~]$ sed -n '/vm.max_map_count/p' /etc/sysctl.conf
+vm.max_map_count=262144
+[root@es-cluster ~]$ sysctl -p
+```
+
+- 安装 docker
+> [Install Docker Engine](https://docs.docker.com/engine/install/)
+
+
+- 安装 docker compose
+> [Install docker compose](https://docs.docker.com/compose/install/)
+
+
+从镜像网站下载想要安装的包
+> [清华大学镜像源](https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu/dists/jammy/pool/stable/amd64/)
+
+```bash
+wget https://mirrors.tuna.tsinghua.edu.cn/docker-ce/linux/ubuntu/dists/jammy/pool/stable/amd64/docker-compose-plugin_2.19.1-1~ubuntu.22.04~jammy_amd64.deb
+```
+
+dpkg  安装
+```bash
+ dpkg -i docker-compose-plugin_2.19.1-1~ubuntu.22.04~jammy_amd64.deb
+```
+
+
+### 制作 elasticsearch 镜像
+
+
+#### 自己制作 elasticsearch 镜像
+- 用 ubuntu22.04 做基础镜像
+- 下载 .deb 安装包到镜像中，用 dpkg -i 安装
+- 未做
+
+
+#### 用官方提供的镜像
+> 官方镜像：[elasticsearch](https://www.docker.elastic.co/r/elasticsearch)
+> 官方镜像的 Dockerfile：[elasticsearch](https://github.com/elastic/elasticsearch/tree/main/distribution/docker/src/docker)
+
+
+- 官方镜像默认进入容器后 id 为 elasticsearch(1000) 而非 root，且没有 sudo 执行权限
+
+官方的镜像可以运行一个 elasticsearch 容器，需要指明环境变量为单节点，否则默认集群模式不能正常运行
+
+```bash
+docker run --name es-01 -d -p 9200:9200 -e "discovery.type=single-node" docker.elastic.co/elasticsearch/elasticsearch:8.8.2
+```
+
+
+### docker compose 部署 elasticsearch 集群
+> 官方介绍：[Install Elasticsearch with Docker](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/docker.html)
+> 多节点集群：[Start a multi-node cluster with Docker Compose](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/docker.html#docker-compose-file)
+> 官方提供的 docker-compose.yml 文件：[docker-compose.yml](https://github.com/elastic/elasticsearch/tree/7.5/distribution/docker)
+> 测试用：[docker-compose.yml](https://github.com/elastic/elasticsearch/tree/main/distribution/docker)
+> [docker-compose.yml](https://github.com/elastic/elasticsearch/tree/main/docs/reference/setup/install/docker)
+> docker compose 官方文档：[compose-file](https://docs.docker.com/compose/compose-file/05-services/)
+
+
+- 注意旧的 docker-compose 命令改为 docker compose，见官方说明：[Migrate to Compose V2](https://docs.docker.com/compose/migrate/)
+
+
+- 将官方的 [docker-compose.yml](https://github.com/elastic/elasticsearch/tree/main/docs/reference/setup/install/docker) 文件和对应的环境配置文件 .env 下载下来，然后用 docker compose 命令执行
+
+官方的 docker-compose.yml 开启了 xpack 功能，实验删除该部分
+官方还提供 kibana，但 kibana 运行一段时间就退出了，暂时去掉 kibana
+进入 docker-compose.yml 所在的目录用 `docker compose logs kibana` 查看日志发现，kibana 需要 es 的密码，没有密码因此退出
+```bash
+docker-kibana-1  |  FATAL  Error: [config validation of [elasticsearch].password]: expected value of type [string] but got [number]
+```
+
+
+简化如下：
+```bash
+version: "2.2"
+
+services:
+  es01:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - esdata01:/usr/share/elasticsearch/data
+    ports:
+      - ${ES_PORT}:9200
+    environment:
+      - node.name=es01
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=es01,es02,es03
+      - discovery.seed_hosts=es02,es03
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+  es02:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - esdata02:/usr/share/elasticsearch/data
+    environment:
+      - node.name=es02
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=es01,es02,es03
+      - discovery.seed_hosts=es01,es03
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+  es03:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - esdata03:/usr/share/elasticsearch/data
+    environment:
+      - node.name=es03
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=es01,es02,es03
+      - discovery.seed_hosts=es01,es02
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=false
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+volumes:
+  esdata01:
+    driver: local
+  esdata02:
+    driver: local
+  esdata03:
+    driver: local
+```
+
+里面用到的环境变量单独写在一个 env.sh 的文件中:
+```bash
+# Version of Elastic products
+STACK_VERSION=8.8.2
+
+# Set the cluster name
+CLUSTER_NAME=es-docker-cluster
+
+# Port to expose Elasticsearch HTTP API to the host
+ES_PORT=9200
+#ES_PORT=127.0.0.1:9200
+
+# Increase or decrease based on the available host memory (in bytes)
+MEM_LIMIT=1073741824
+```
+
+写一个运行脚本 run.sh：
+```bash
+#!/bin/bash 
+
+. env.sh
+docker compose up -d
+```
+
+### 验证 ES 集群
+- 查看镜像是否正常运行
+```bash
+[root@es docker]$ docker ps -a
+```
+
+- 查看集群的健康状态
+```bash
+[root@es docker]$ curl -sXGET http://10.0.0.201:9200/_cluster/health?pretty=true
+{
+  "cluster_name" : "es-docker-cluster",
+  "status" : "green",
+  "timed_out" : false,
+  "number_of_nodes" : 3,
+  "number_of_data_nodes" : 3,
+  "active_primary_shards" : 1,
+  "active_shards" : 2,
+  "relocating_shards" : 0,
+  "initializing_shards" : 0,
+  "unassigned_shards" : 0,
+  "delayed_unassigned_shards" : 0,
+  "number_of_pending_tasks" : 0,
+  "number_of_in_flight_fetch" : 0,
+  "task_max_waiting_in_queue_millis" : 0,
+  "active_shards_percent_as_number" : 100.0
+}
+```
+
+- 查看集群中的各节点
+```bash
+[root@es docker]$ curl -sXGET http://10.0.0.201:9200/_cat/nodes?v
+ip         heap.percent ram.percent cpu load_1m load_5m load_15m node.role   master name
+172.18.0.2           30          89   5    0.13    0.17     0.25 cdfhilmrstw -      es01
+172.18.0.4           32         100   5    0.13    0.17     0.25 cdfhilmrstw *      es02
+172.18.0.5           50         100   5    0.13    0.17     0.25 cdfhilmrstw -      es03
+```
 
 
 ## 节点 Node
@@ -440,101 +763,78 @@ when a concurrent read request is made after the write operation has been indexe
 Elasticsearch mitigates this risk by pinging the master every second (by default) and rejecting indexing operations if no master is known.
 
 
-# 集群健康状态
-## green
+## ES 集群健康状态
+> [Cluster health](https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-health.html#cluster-health-api-response-body)
 
-## yellow
-有部分数据丢失，但完整数据还在
-
-## red
-
-
-
-
-
-# 安装
-- ubuntu22.04
-- 3G 内存，2核 CPU
-
-
-## 包安装
-> [官方安装说明](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/deb.html)
-
-### 安装 
-- wget 从镜像网站下载 .deb 包
-清华大学镜像网站：[elasticsearch](https://mirrors.tuna.tsinghua.edu.cn/elasticstack/8.x/apt/pool/main/e/elasticsearch/)
-
-- dpkg -i 安装
+- 查看集群的健康状态
 ```bash
-[root@es-1 src]$ dpkg -i elasticsearch-8.8.2-amd64.deb
-```
-
-### 优化配置
-
-- 实验环境需要修改 JVM heap size
-编辑 `/etc/elasticsearch/jvm.options`
-```bash
-################################################################
-## IMPORTANT: JVM heap size
-################################################################
-##
-## The heap size is automatically configured by Elasticsearch
-## based on the available memory in your system and the roles
-## each node is configured to fulfill. If specifying heap is
-## required, it should be done through a file in jvm.options.d,
-## which should be named with .options suffix, and the min and
-## max should be set to the same value. For example, to set the
-## heap to 4 GB, create a new file in the jvm.options.d
-## directory containing these lines:
-##
--Xms512m
--Xmx512m
-```
-
-- 关闭 xpack 功能
-编辑 `/etc/elasticsearch/elasticsearch.yml`
-
-```bash
-# Enable security features
-xpack.security.enabled: false
-```
-
-### 开启服务
-```bash
-[root@es-1 src]$ systemctl daemon-reload
-[root@es-1 src]$ systemctl enable --now elasticsearch.service
-```
-
-### 验证
-- `ss -ntl` 看到 9200 的端口打开
-- curl 访问 9200 端口
-```bash
-[root@es-1 src]$ curl http://127.0.0.1:9200/
+[root@es docker]$ curl -sXGET http://10.0.0.201:9200/_cluster/health?pretty=true
 {
-  "name" : "es-1",
-  "cluster_name" : "elasticsearch",
-  "cluster_uuid" : "8L0Gmyj4RkGMS8taazKr7g",
-  "version" : {
-    "number" : "8.8.2",
-    "build_flavor" : "default",
-    "build_type" : "deb",
-    "build_hash" : "98e1271edf932a480e4262a471281f1ee295ce6b",
-    "build_date" : "2023-06-26T05:16:16.196344851Z",
-    "build_snapshot" : false,
-    "lucene_version" : "9.6.0",
-    "minimum_wire_compatibility_version" : "7.17.0",
-    "minimum_index_compatibility_version" : "7.0.0"
-  },
-  "tagline" : "You Know, for Search"
+  "cluster_name" : "es-docker-cluster",
+  "status" : "green",
+  "timed_out" : false,
+  "number_of_nodes" : 3,
+  "number_of_data_nodes" : 3,
+  "active_primary_shards" : 1,
+  "active_shards" : 2,
+  "relocating_shards" : 0,
+  "initializing_shards" : 0,
+  "unassigned_shards" : 0,
+  "delayed_unassigned_shards" : 0,
+  "number_of_pending_tasks" : 0,
+  "number_of_in_flight_fetch" : 0,
+  "task_max_waiting_in_queue_millis" : 0,
+  "active_shards_percent_as_number" : 100.0
 }
 ```
 
+上面的 `status` 显示集群的健康状态
 
-### 配置文件优化
-> [module-network](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/modules-network.html)
+### green
+- All shards are assinged
+
+### yellow
+- All primary shards are assigned, but one or more replica shards are unassinged
+
+If a node in the cluster fails, some data could be unavailable until that node repaired
+
+### red
+- one or more primary shards are unassigned, so some data is unavailable
 
 
-# 访问 Elasticsearch
+
+## 访问 Elasticsearch
+> [Beginner's Guide to Elasticsearch API: Indexing and Searching Data](https://www.atatus.com/blog/rest-apis-of-elasticsearch-an-overview/)
+> 官方介绍：[REST APIs](https://www.elastic.co/guide/en/elasticsearch/reference/current/rest-apis.html)
+
+
+### CAT APIs
+> [Compact and aligned text (CAT) APIs](https://www.elastic.co/guide/en/elasticsearch/reference/current/cat.html)
+
+
+官方文档提供例子，可以设置服务器端地址，然后 Copy as curl 到终端执行：
+```bash
+[root@es docker]$ curl -X GET "10.0.0.201:9200/_cat/master?v=true&pretty"
+id                     host       ip         node
+qV3pPgSPQjOnmy8nG8KT2A 172.18.0.4 172.18.0.4 es02
+```
+
+### Cluster APIs
+> [Cluster APIs](https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-health.html#cluster-health-api-response-body)
+
+
+## Elasticsearch 插件
+使用一些插件更好的查看 Elasticsearch 的状态
+
+### Head 插件
+> [elasticsearch-head](https://github.com/mobz/elasticsearch-head)
+
+
+可以直接在浏览器安装插件，如在 Google chrome 浏览器中安装 Multi Elasticsearch Head 插件
+
+
+### Cerebro 插件
+> [cerebro](https://github.com/lmenezes/cerebro)
 
 
 # Beats 收集数据
@@ -574,18 +874,25 @@ Beats 是 data shipper，有很多种 Beats：
 ## 安装
 > [Filebeat quick start: installation and configuration](https://www.elastic.co/guide/en/beats/filebeat/current/filebeat-installation-configuration.html)
 
-
+安装在需要收集日志的系统上
 最好和 elasticsearch 相同版本
 
+### 包安装
 - 下载镜像安装包
 > [filebeat](https://mirrors.tuna.tsinghua.edu.cn/elasticstack/apt/8.x/pool/main/f/filebeat/)
 
 - 安装
 ```bash
 [root@docker src]$ ls
-filebeat-8.8.2-amd64.deb  kibana-8.8.2-amd64.deb
+filebeat-8.8.2-amd64.deb  
 [root@docker src]$ dpkg -i filebeat-8.8.2-amd64.deb
 ```
+
+
+### docker 安装
+> [Run Filebeat on Docker](https://www.elastic.co/guide/en/beats/filebeat/current/running-on-docker.html)
+
+- filebeat 和 elasticsearch 都用相同的版本 8.8.2
 
 
 ## Filebeat 工作原理
@@ -600,11 +907,12 @@ filebeat-8.8.2-amd64.deb  kibana-8.8.2-amd64.deb
 - It reads the content of a single file
 - It reads each file, line by line, and sends the content to the output
 - The harvester is responsible for opening and closing file
-- If a file is removed or renamed while it's being harvested, Filebeat continues to read the file. So the space is reserved until the harvested closes
+- If a file is removed or renamed while it's being harvested, Filebeat continues to read the file. 
+  So the space is reserved until the harvested closes
 - By default, Filebeat keeps the file open until `close_inactive` is reached
 
 
-filebeat 是单进程，多线程工作，一个 harvester 对应一个线程
+filebeat 是单进程，多线程工作，但一个 harvester 并非对应一个线程
 ```bash
 [root@docker src]$ pstree -p | grep filebeat
            |-filebeat(907)-+-{filebeat}(964)
@@ -613,12 +921,21 @@ filebeat 是单进程，多线程工作，一个 harvester 对应一个线程
            |               |-{filebeat}(967)
            |               |-{filebeat}(1008)
            |               |-{filebeat}(1009)
-           |               `-{filebeat}(1636)
+           |                -{filebeat}(1636)
 ```
 ```bash
 [root@docker filebeat]$ cat /proc/907/status | grep -i threads
 Threads:        8
 ```
+
+- 什么是 harvester？
+The number of threads does not necessarily equal the number of harvesters in Filebeat. 
+Each harvester in Filebeat is associated with its own goroutine (a lightweight thread) to handle the harvesting process for a specific file. 
+However, Filebeat may use additional goroutines for other purposes such as network communication, internal processing, or handling events.
+
+In Filebeat, a goroutine is a lightweight thread of execution that is used to perform concurrent tasks. 
+Goroutines are part of the Go programming language, which is the language in which Filebeat is implemented.
+
 
 注意 harvester 的限制：[Too many open file handlers](https://www.elastic.co/guide/en/beats/filebeat/current/open-file-handlers.html)
 
@@ -705,17 +1022,98 @@ Change: 2023-07-11 10:18:13.652004008 +0800
 Birth: 2023-07-09 14:32:03.775167501 +0800
 ```
 
-
-
 注意，如果一个文件被删了，然后新建一个文件的 inode 和旧文件相同，可能造成 Filebeat 认为新文件和旧文件相同，见说明：[Inode reuse causes Filebeat to skip lines](https://www.elastic.co/guide/en/beats/filebeat/current/inode-reuse-issue.html)
 
-## 配置 
+
+## filebeat 配置
+filebeat 包安装可以用 systemd 管理，默认的配置文件为 `/etc/filebeat/filebeat.yml`
+filebeat 配置文件的格式介绍见：[Config file format](https://www.elastic.co/guide/en/beats/libbeat/8.8/config-file-format.html)
+
+
+### 配置文件中使用环境变量
+> [Environment variables](https://www.elastic.co/guide/en/beats/libbeat/8.8/config-file-format-env-vars.html)
+
+- 可以再配置文件中使用环境变量，如指定 hosts 时用环境变量
+
 
 ### inputs
 > [Configure inputs](https://www.elastic.co/guide/en/beats/filebeat/current/configuration-filebeat-options.html)
 
-
 - 默认 `input_type` 为 `filestream`
+- 可以配置不同的输入类型
+
+
+#### stdin 标准输入读取数据
+> [Stdin input](https://www.elastic.co/guide/en/beats/filebeat/current/filebeat-input-stdin.html)
+
+- 从标准输入读取数据处理
+
+
+#### Multiline messages 管理多行内容
+> [Manage multiline messages](https://www.elastic.co/guide/en/beats/filebeat/current/multiline-examples.html)
+
+- 有时一个事件可能生成多行日志，如 java 应用，因此需要将多行合并为一个日志给 filebeat 收集，
+  防止一个错误最后生成多行 ES 文档记录
+
+如：
+```bash
+parsers:
+- multiline:
+    type: pattern
+    pattern: '^\['
+    negate: true
+    match: after
+```
+
+筛选日志文件的模式为以 `[` 开头的行，negate 为 true 表示不匹配该模式的行，
+match 为 after，表示不匹配该模式的行追加到匹配该模式的行后面合并为一行
+
+见官方文档中图示
+
+
+#### container input
+> [Container input](https://www.elastic.co/guide/en/beats/filebeat/current/filebeat-input-container.html)
+
+
+#### filestream input
+> [filestream input](https://www.elastic.co/guide/en/beats/filebeat/current/filebeat-input-filestream.html)
+
+
+- 从 active log file 中读取数据，代替旧的 log 类型，默认类型
+
+
+### output 
+> [Configure the output](https://www.elastic.co/guide/en/beats/filebeat/current/configuring-output.html)
+
+
+- 从 filebeat 收集的日志可以输出到 redis，kafka，logstash，elasticsearch 或 console
+
+#### redis
+> [Configure the Redis output](https://www.elastic.co/guide/en/beats/filebeat/current/redis-output.html)
+
+
+- 可以配置多个 redis host 地址，或者用环境变量代替
+
+```bash
+# ------------------------------ Redis Output -------------------------------
+output.redis:
+  hosts: 
+    - "10.0.0.208:6370"
+    - "10.0.0.208:6371"
+    - "10.0.0.208:6372"
+  password: "123456"
+  db: 0
+  timeout: 5
+  key: "nginx"
+  keys:
+    - key: "nginx_access"   
+      when.contains:
+        tags: "nginx_access"
+    - key: "nginx_error"  
+      when.contains:
+        tags: "nginx_error"
+```
+
 
 
 # Logstash
