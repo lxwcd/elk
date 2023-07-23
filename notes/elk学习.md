@@ -1120,8 +1120,10 @@ output.redis:
 > [Logstash](https://www.elastic.co/guide/en/logstash/current/introduction.html)
 
 
-## 安装
+- logstash 可以动态的将多种不同来源的数据进行处理，过滤，统一格式发送给目的地
+- logstash 可以水平伸缩，插件多
 
+## 安装
 - 从镜像网站下载安装包
 > [logstash](https://mirrors.tuna.tsinghua.edu.cn/elasticstack/apt/8.x/pool/main/l/logstash/)
 
@@ -1135,14 +1137,100 @@ output.redis:
 ```
 
 - 为 logstash 创建软连接
+从 `/usr/lib/systemd/system/logstash.service` 文件中查看二进制文件的路径
 ```bash
+ln -sv /usr/share/logstash/bin/logstash /usr/local/sbin/logstash
+```
 
+## Logstash 工作原理
+> [How logstash works](https://www.elastic.co/guide/en/logstash/current/pipeline.html)
+
+
+> The Logstash event processing pipeline has three stages: inputs → filters → outputs. Inputs generate events, filters modify them, and outputs ship them elsewhere.
+
+
+## Logstash 配置文件
+> [Logstash Configuration File](https://www.elastic.co/guide/en/logstash/current/config-setting-files.html)
+
+
+> Logstash has two types of configuration files: pipeline configuration files, which define the Logstash processing pipeline, and settings files, which specify options that control Logstash startup and execution.
+
+
+修改配置文件后通过 `systemctl restart logstash` 重启
+
+
+### Pipeline Configuration Files
+- pipeline 配置文件用于配置 logstash 怎么收集数据以及过滤等处理流程
+- 管道配置文件放在 `/etc/logstash/conf.d` 目录下，创建的的以 `.conf` 结尾的文件都会被加载
+
+### Settings Files
+
+#### logstash.yml
+> [logstash.yml](https://www.elastic.co/guide/en/logstash/current/logstash-settings-file.html)
+
+logstash 配置文件
+
+如：
+```bash
+# ------------  Node identity ------------
+#
+# Use a descriptive name for the node:
+#
+node.name: logstash-node01
+#
+# ------------ Data path ------------------
+#
+# Which directory should be used by logstash and its plugins
+# for any persistent needs. Defaults to LOGSTASH_HOME/data
+#
+path.data: /var/lib/logstash
 ```
 
 
-## Logstash 命令
+#### pipelines.yml
+Contains the framework and instructions for running multiple pipelines in a single Logstash instance.
 
+```bash
+[root@logstash logstash]$ cat pipelines.yml
+# This file is where you define your pipelines. You can define multiple.
+# For more information on multiple pipelines, see the documentation:
+#   https://www.elastic.co/guide/en/logstash/current/multiple-pipelines.html
+
+- pipeline.id: main
+  path.config: "/etc/logstash/conf.d/*.conf"
+```
+
+如上面定义管道配置文件会加载的文件
+
+
+#### jvm.options
+JVM 配置，因为 logstash 是基于 Java 和 Ruby 语言开发
+
+如根据实际情况设置 heap space：
+```bash
+## JVM configuration
+
+# Xms represents the initial size of total heap space
+# Xmx represents the maximum size of total heap space
+
+-Xms512m
+-Xmx512m
+```
+
+#### log4j2.properties
+> [Log4j2 configuration](https://www.elastic.co/guide/en/logstash/current/logging.html#log4j2)
+
+
+## 修改 Logstash 用户
+`systemctl status logstash.service` 查看 service 文件的路径
+将 User 和 Group 修改为 root，防止 logstash 收集本机一些日志时权限不够
+
+修改 service 文件后通过 `systemctl daemon-reload` 和 `systemctl restart logstash` 使其生效
+
+## Logstash 命令
 `logstash --help` 查看帮助，需要等一段时间
+
+
 ### logstatsh -f
 指定 `.conf` 配置文件，要指明绝对路径，相对路径是相对于 `/usr/share/logstash` 的路径而非当前路径
 
