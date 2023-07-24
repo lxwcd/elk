@@ -1082,6 +1082,41 @@ match 为 after，表示不匹配该模式的行追加到匹配该模式的行�
 - 从 active log file 中读取数据，代替旧的 log 类型，默认类型
 
 
+```bash
+filebeat.inputs:
+# filestream is an input for collecting log messages from files.
+- type: filestream
+  # Unique ID among all inputs, an ID is required.
+  id: nginx-access-log
+  # Change to true to enable this input configuration.
+  enabled: true
+  # Paths that should be crawled and fetched. Glob based paths.
+  paths:
+    - /docker-02/web/nginx/logs/access_json.log
+  tags: ["nginx-access"]
+  parsers:
+    - ndjson:
+      target: ""
+      add_error_key: true
+      message_key: log
+  #fields:
+  #  level: debug
+  #  review: 1
+
+- type: filestream
+  id: nginx-error-log
+  enabled: true
+  paths:
+    - /docker-02/web/nginx/logs/error.log
+  tags: ["nginx-error"]
+  parsers:
+    - ndjson:
+      target: ""
+      add_error_key: true
+      message_key: log
+```
+
+
 ### output 
 > [Configure the output](https://www.elastic.co/guide/en/beats/filebeat/current/configuring-output.html)
 
@@ -1093,6 +1128,7 @@ match 为 after，表示不匹配该模式的行追加到匹配该模式的行�
 
 
 - 可以配置多个 redis host 地址，或者用环境变量代替
+- 可以利用 inputs 模块定义的 tags 将访问日志和错误日志分别存放在 nginx 不同的 key 中 
 
 ```bash
 # ------------------------------ Redis Output -------------------------------
@@ -1106,12 +1142,12 @@ output.redis:
   timeout: 5
   key: "nginx"
   keys:
-    - key: "nginx_access"   
+    - key: "nginx-access"   
       when.contains:
-        tags: "nginx_access"
-    - key: "nginx_error"  
+        tags: "nginx-access"
+    - key: "nginx-error"  
       when.contains:
-        tags: "nginx_error"
+        tags: "nginx-error"
 ```
 
 
@@ -1160,8 +1196,23 @@ ln -sv /usr/share/logstash/bin/logstash /usr/local/sbin/logstash
 
 
 ### Pipeline Configuration Files
+> [Creating a Logstash pipeline](https://www.elastic.co/guide/en/logstash/current/configuration.html)
+
 - pipeline 配置文件用于配置 logstash 怎么收集数据以及过滤等处理流程
 - 管道配置文件放在 `/etc/logstash/conf.d` 目录下，创建的的以 `.conf` 结尾的文件都会被加载
+
+
+#### pipeline 配置文件的格式
+> [Structure of a pipeline](https://www.elastic.co/guide/en/logstash/current/configuration-file-structure.html)
+
+
+配置文件中值的类型有多种
+
+```bash
+path => [ "/var/log/messages", "/var/log/*.log" ]
+host => "10.0.0.208"
+```
+
 
 ### Settings Files
 
@@ -1204,17 +1255,20 @@ Contains the framework and instructions for running multiple pipelines in a sing
 
 
 #### jvm.options
+> [JVM settings](https://www.elastic.co/guide/en/logstash/current/jvm-settings.html)
+
+
 JVM 配置，因为 logstash 是基于 Java 和 Ruby 语言开发
 
-如根据实际情况设置 heap space：
+根据实际情况设置 heap space，设置依据参考官方介绍：[Setting the JVM heap size](https://www.elastic.co/guide/en/logstash/current/jvm-settings.html#heap-size)
 ```bash
 ## JVM configuration
 
 # Xms represents the initial size of total heap space
 # Xmx represents the maximum size of total heap space
 
--Xms512m
--Xmx512m
+-Xms1g
+-Xmx1g
 ```
 
 #### log4j2.properties
@@ -1228,15 +1282,135 @@ JVM 配置，因为 logstash 是基于 Java 和 Ruby 语言开发
 修改 service 文件后通过 `systemctl daemon-reload` 和 `systemctl restart logstash` 使其生效
 
 ## Logstash 命令
+> [Running Logstash from the Command Line](https://www.elastic.co/guide/en/logstash/current/running-logstash-command-line.html)
+
 `logstash --help` 查看帮助，需要等一段时间
 
 
-### logstatsh -f
+### logstatsh -f 指定配置文件
 指定 `.conf` 配置文件，要指明绝对路径，相对路径是相对于 `/usr/share/logstash` 的路径而非当前路径
+
+
+### logstash -e 指定配置内容
+直接将配置文件的内容写在命令行
+
+
+### logstash -t 配置文件语法检查
+- Check configuration for valid syntax and then exit
+- Note that grok patterns are not checked for correctness with this flag
+
+### logstash -r 重新加载配置文件
+Monitor configuration changes and reload whenever the configuration is changed. 
+NOTE: Use SIGHUP to manually reload the config.
 
 
 ## Input 插件
 > [Input plugins](https://www.elastic.co/guide/en/logstash/8.8/input-plugins.html)
+
+
+### Redis input plugin
+> [Redis input plugin](https://www.elastic.co/guide/en/logstash/current/plugins-inputs-redis.html)
+
+
+- redis 输入插件中 host 配置多个主机出错
+```bash
+input {
+    redis {
+        host => [ "10.0.0.208:3670", "10.0.0.208:3671", "10.0.0.208:3672" ]
+        password => "123456"
+        db => "0"
+        data_type => 'list'
+        key => "nginx"
+    }
+}
+
+output {
+    stdout {
+        codec => json
+    }
+    file {
+        path => "/tmp/test.log"
+    }
+}
+```
+
+- 写 redis 从节点的 host 和 port 也会出错，因为 slave 节点是 readonly
+
+- 写 redis master 节点，在 host 中指定 iP 和 端口，不单独写 port，也会出错，必须写 host 和 port
+```bash
+input {
+	redis {
+        host => "10.0.0.208:6372"
+        #port => "6372"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx"
+	}
+}
+```
+从官方文档可知，host 的 value type 为 string，port 的 value type 为 number
+
+- 将 redis master 和 slave 节点分开都写到 input 插件中
+三个 redis server 用 docker 运行，宿主机为 10.0.0.208，对外曝露端口分别为 6370 6371 6372
+
+```bash
+input {
+	redis {
+        host => "10.0.0.208"
+        port => "6370"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx"
+	}
+	redis {
+        host => "10.0.0.208"
+        port => "6371"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx"
+	}
+	redis {
+        host => "10.0.0.208"
+        port => "6372"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx"
+	}
+}
+```
+
+其中最后一个端口 6372 对应的是 master 节点，其余两个为 slave 节点
+配置后 logstash 可以从 redis 获取数据，但会有错误提示，因为写的两个 slave 节点不能写数据
+
+
+- 写 master 节点可以成功获取数据，logstash 消费了 redis 中的数据，redis 中就无数据了
+```bash
+input {
+	redis {
+        host => "10.0.0.208"
+        port => "6372"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx"
+	}
+}
+
+output {
+    stdout {
+        codec => json
+    }
+    file {
+        path => "/tmp/test.log"
+    }
+}
+```
+
+- host 和 port 等可以写成环境变量
 
 
 ## Filter 插件
