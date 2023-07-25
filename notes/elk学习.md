@@ -1543,3 +1543,61 @@ output {
 > Grok is a great way to parse unstructured log data into something structured and queryable.
 
 - Logstash 提供了约 120 种 grok 模式，也可以自己定义模式
+
+
+#### Grok 基本语法
+> [Grok Basics](https://www.elastic.co/guide/en/logstash/current/plugins-filters-grok.html#_grok_basics)
+
+
+- 基本语法：`%{SYNTAX:SEMANTIC}`
+`SYNTAX` 为要匹配的内容，即写模式
+`SEMANTIC` 为自定义的名字
+
+如：`%{NUMBER:duration} %{IP:client}` 中匹配 `NUMBER` 模式的文本，将该字段命令为 `duration`
+如模式 `WORD` 表示单词，可以匹配多个字段，但根据实际内容的含义，第一个匹配的文本命名为 `a`，即 `SEMANTIC` 为 `a`，而第二个匹配的文本命名为 `b`
+
+
+- 模式 pattern
+`NUMBER` 模式可以从官方提供的模式中查看：[grok-patterns](https://github.com/logstash-plugins/logstash-patterns-core/blob/main/patterns/ecs-v1/grok-patterns#LL13)
+
+查看文件夹 ecs-v1 中的内容
+
+- 正则表达式
+pattern 的定义为正则表达式，grok 使用的 regular expression library is Oniguruma，见 [oniguruma](https://github.com/kkos/oniguruma/blob/master/doc/RE)
+
+
+- 自定义模式 Custom Patterns
+如果 grok 官方中没有符合的模式，可以自己定义模式，模式使用 oniguruma 语法
+
+```bash
+(?<field_name>the pattern here)
+```
+如：
+```bash
+ (?<queue_id>[0-9A-F]{10,11})
+```
+
+自定义的模式写在一个自定义模式文件中，模式文件在目录 `patterns` 目录中，文件名随意，如 `postfix`：
+```bash
+# contents of ./patterns/postfix:
+POSTFIX_QUEUEID [0-9A-F]{10,11}
+```
+自定义一种 pattern `POSTFIX_QUEUEID`，后面的正则表示式表示匹配模式
+
+使用自定义模式时先指明模式的路径，用 `patterns_dir` 指明路径
+```bash
+filter {
+    grok {
+      patterns_dir => ["./patterns"]
+      match => { "message" => "%{SYSLOGBASE} %{POSTFIX_QUEUEID:queue_id}: %{GREEDYDATA:syslog_message}" }
+    }
+  }
+```
+
+
+例如 nginx 错误日志格式如下：
+```bash
+2023/07/24 19:36:14 [error] 13#0: *4 open() "/data/www/index.htmlsa" failed (2: No such file or directory), 
+client: 10.0.0.1, server: localhost, request: "GET /index.htmlsa HTTP/1.1", host: "10.0.0.208:8080"
+```
+
