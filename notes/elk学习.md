@@ -1304,6 +1304,119 @@ Monitor configuration changes and reload whenever the configuration is changed.
 NOTE: Use SIGHUP to manually reload the config.
 
 
+## 创建 logstash pipeline
+> [Creating a Logstash pipeline](https://www.elastic.co/guide/en/logstash/current/configuration.html)
+> 配置例子：[Logstash configuration examples](https://www.elastic.co/guide/en/logstash/current/config-examples.html)
+
+
+### Structure of a pipeline
+> [Structure of a pipeline](https://www.elastic.co/guide/en/logstash/8.8/configuration-file-structure.html#array) 
+
+
+
+### Accessing event data and fields
+> [Accessing event data and fields](https://www.elastic.co/guide/en/logstash/current/event-dependent-configuration.html#conditionals)
+
+
+- Inputs generate events, filters modify them, and outputs ship them
+
+- All events have properties
+例如 nginx 访问日志有 status code，request path，HTTPverb (GET, POST) 等
+Logstash 称这些 properties 为 fields
+
+inputs 阶段没有 fields，因为 inputs 产生 events
+
+inputs blocks 中也没有条件判断等，因为条件判断依赖 events 和 fields
+
+#### Field references
+> [Field references](https://www.elastic.co/guide/en/logstash/current/event-dependent-configuration.html#logstash-config-field-references)
+
+
+例如 event：
+```bash
+{
+  "agent": "Mozilla/5.0 (compatible; MSIE 9.0)",
+  "ip": "192.168.24.44",
+  "request": "/index.html"
+  "response": {
+    "status": 200,
+    "bytes": 52353
+  },
+  "ua": {
+    "os": "Windows 7"
+  }
+}
+```
+- To reference top-level field as `agent`, just specify the fieldname
+- To reference the `os` field, specify `[ua][os]`
+
+
+#### sprintf format
+> [sprintf format](https://www.elastic.co/guide/en/logstash/current/event-dependent-configuration.html#sprintf)
+
+- sprintf format enables you to embed field values in other strings
+
+```bash
+output {
+  statsd {
+    increment => "apache.%{[response][status]}"
+  }
+}
+
+output {
+  statsd {
+    increment => "apache.%{[response][status]}"
+  }
+}
+```
+
+#### 条件判断 Conditionals
+> [Conditionals](https://www.elastic.co/guide/en/logstash/current/event-dependent-configuration.html#conditionals)
+
+
+```bash
+if EXPRESSION {
+  ...
+} else if EXPRESSION {
+  ...
+} else {
+  ...
+}
+```
+
+```bash
+filter {
+  if [action] == "login" {
+    mutate { remove_field => "secret" }
+  }
+}
+```
+上面的 `action` 为 field
+
+例子见：[Using conditionals](https://www.elastic.co/guide/en/logstash/current/config-examples.html#using-conditionals)
+
+
+#### The @metadata field
+> [The @metadata field](https://www.elastic.co/guide/en/logstash/current/event-dependent-configuration.html#metadata)
+
+
+- `@metadata` field 不会在 output 阶段作为 events 的一部分，可以用于条件判断，但不会输出该字段的内容
+
+### 使用环境变量
+> [Using environment variables Overview](https://www.elastic.co/guide/en/logstash/current/environment-variables.html) 
+
+
+```bash
+export TCP_PORT=12345
+```
+```bash
+input {
+  tcp {
+    port => "${TCP_PORT}"
+  }
+}
+```
+
 ## Input 插件
 > [Input plugins](https://www.elastic.co/guide/en/logstash/8.8/input-plugins.html)
 
@@ -1415,6 +1528,10 @@ output {
 
 ## Filter 插件
 > [Filter plugins](https://www.elastic.co/guide/en/logstash/current/filter-plugins.html)
+
+
+
+
 
 
 ### Grok 插件
