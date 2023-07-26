@@ -1551,12 +1551,64 @@ output {
 
 ##### 基本语法：`%{SYNTAX:SEMANTIC}`
 `SYNTAX` 为要匹配的内容，即写模式
-`SEMANTIC` 为自定义的名字
-
+`SEMANTIC` 为自定义的名区分几种匹配模式：WROD, DATA and GREEDYDATA
 如：`%{NUMBER:duration} %{IP:client}` 中匹配 `NUMBER` 模式的文本，将该字段命令为 `duration`
 如模式 `WORD` 表示单词，可以匹配多个字段，但根据实际内容的含义，第一个匹配的文本命名为 `a`，即 `SEMANTIC` 为 `a`，而第二个匹配的文本命名为 `b`
 
-注意匹配
+
+注意区分几种匹配模式：WROD, DATA and GREEDYDATA，各个模式的定义见 [grok-patterns](https://github.com/logstash-plugins/logstash-patterns-core/blob/main/patterns/ecs-v1/grok-patterns)
+
+```bash
+WORD \b\w+\b
+DATA .*?
+GREEDYDATA .*
+```
+
+`GREEDYDATA` 为贪婪匹配
+
+
+1. 示例一
+例如匹配下面内容：
+```bash
+[2023-07-26 10:30:45] [ERROR] This is an error message: Invalid input detected.
+```
+
+使用如下 grok pattern
+```bash
+\[%{DATA:timestamp}\] \[%{WORD:severity}\] %{GREEDYDATA:message}
+```
+
+最后匹配到的内容如下：
+- `timestamp`: "2023-07-26 10:30:45"
+- `severity`: "ERROR"
+- `message`: "This is an error message: Invalid input detected."
+
+
+2. 示例二
+```bash
+*1 open() "/data/www/index.htmls" failed (2: No such file or directory), client: 10.0.0.1, server: localhost, request: "GET /index.htmls HTTP/1.1", host: "10.0.0.208:8080"
+```
+
+如果匹配模式为：
+```bash
+grok {
+    match => { 
+        "message" => "%{DATA:error_message}," 
+    }
+}
+```
+则匹配到的内容为 `*1 open() "/data/www/index.htmls" failed (2: No such file or directory),`
+
+如果用贪婪的匹配：
+```bash
+grok {
+    match => { 
+        "message" => "%{GREEDYDATA:error_message}," 
+    }
+}
+```
+则匹配到第一个逗号后会继续向后匹配，即匹配到最后一个逗号处
+
 
 ##### 模式 pattern
 `NUMBER` 模式可以从官方提供的模式中查看：[grok-patterns](https://github.com/logstash-plugins/logstash-patterns-core/blob/main/patterns/ecs-v1/grok-patterns#LL13)
@@ -1595,7 +1647,6 @@ filter {
   }
 ```
 上面是官方例子，实际测试时（用 logstash -f 指定文件方式）自定义模式文件所在的目录最好写上绝对路径
-
 
 
 #### match 选项
@@ -1659,7 +1710,6 @@ filter {
 
 
 
-
 #### overwrite 选项
 > [overwrite](https://www.elastic.co/guide/en/logstash/current/plugins-filters-grok.html#plugins-filters-grok-overwritev)
 
@@ -1674,20 +1724,123 @@ filter {
 ```
 
 
+#### Drop 插件
+> [Drop filter plugin](https://www.elastic.co/guide/en/logstash/current/plugins-filters-drop.html)
+
+
+可以筛选一些数据丢弃不输出到 elasticsearch 或其他地方，但不影响输入，如输入来源为 redis，logstash 还是会消费 redis 的数据，然后在过滤阶段丢弃，如：
+```bash
+input {
+	redis {
+        host => "${REDIS_HOST}"
+        port => "${REDIS_PORT}"
+        password => "123456"
+        db => "0"
+        data_type => 'list'
+        key => "nginx-access"
+        tags => "nginx-access"
+	}
+	redis {
+        host => "${REDIS_HOST}"
+        port => "${REDIS_PORT}"
+        password => "123456"
+        db => "0"
+        data_type => 'list'
+        key => "nginx-error"
+        tags => "nginx-error"
+	}
+}
+
+filter {
+    if [tags][0] == "nginx-error" {
+        grok {
+            patterns_dir => ["/etc/logstash/conf.d/patterns"]
+            match => { 
+                "message" => "%{NGINX_ERROR_LOG}" 
+            }
+        }
+    }
+    else if [tags][0] == "nginx-access" {
+        drop { }
+    }
+}
+```
+
+`tags` 选项为 array 类型，因此用 tags[0]，将 nginx 访问日志丢弃，只处理 nginx 错误日志
+
+
+
 
 ### 例子
 > [Logstash configuration examples](https://www.elastic.co/guide/en/logstash/current/config-examples.html)
 
 
-
-
-
-
-
-
-例如 nginx 错误日志格式如下：
+#### 处理 nginx 错误日志
+用 nginx 的默认错误日志，其内容如下：
 ```bash
-2023/07/24 19:36:14 [error] 13#0: *4 open() "/data/www/index.htmlsa" failed (2: No such file or directory), 
-client: 10.0.0.1, server: localhost, request: "GET /index.htmlsa HTTP/1.1", host: "10.0.0.208:8080"
+2023/07/26 11:39:36 [error] 13#0: *1 open() "/data/www/abc" failed (2: No such file or directory), client: 10.0.0.1, 
+server: localhost, request: "GET /abc HTTP/1.1", host: "10.0.0.208:8080"
 ```
+
+在 logstash 的过滤配置文件目录下创建一个目录 patterns，在该自定义目录中创建一个文件 cus_patterns，
+该文件中定义 nginx 错误日志的格式：
+```bash
+NGINX_ERROR_LOG %{DATESTAMP:timestamp} \[%{LOGLEVEL:loglevel}\] %{NUMBER:process_id}#%{NUMBER:connection_id}: %{DATA:error_message}, client: %{IP:client_ip}, server: %{HOSTNAME:server_name}, request: \"%{WORD:request_method} %{URIPATH:requested_page} %{DATA:request_protocol}\", host: \"%{HOSTPORT:host_port}\"
+```
+
+定义环境变量：
+```bash
+#!/bin/bash 
+
+export REDIS_HOST="10.0.0.208"
+export REDIS_PORT="6372"
+```
+
+然后过滤时用自定义的模式：
+```bash
+input {
+	redis {
+        host => "${REDIS_HOST}"
+        port => "${REDIS_PORT}"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx-access"
+	}
+	redis {
+        host => "${REDIS_HOST}"
+        port => "${REDIS_PORT}"
+		password => "123456"
+		db => "0"
+		data_type => 'list'
+		key => "nginx-error"
+	}
+}
+
+filter {
+    if [tags][0] == "nginx-error" {
+        grok {
+            patterns_dir => ["/etc/logstash/conf.d/patterns"]
+            match => { 
+                "message" => "%{NGINX_ERROR_LOG}" 
+            }
+        }
+    }
+    else if [tags][0] == "nginx-access" {
+        drop { }
+    }
+}
+
+output {
+    stdout {
+        codec => json
+    }
+    file {
+        path => "/tmp/test.log"
+    }
+}
+```
+在 logstash 的 redis input plugin 中不用定义 tags，因为 redis 中已经定义了 tags
+
+
 
