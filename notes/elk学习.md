@@ -1549,24 +1549,25 @@ output {
 > [Grok Basics](https://www.elastic.co/guide/en/logstash/current/plugins-filters-grok.html#_grok_basics)
 
 
-- 基本语法：`%{SYNTAX:SEMANTIC}`
+##### 基本语法：`%{SYNTAX:SEMANTIC}`
 `SYNTAX` 为要匹配的内容，即写模式
 `SEMANTIC` 为自定义的名字
 
 如：`%{NUMBER:duration} %{IP:client}` 中匹配 `NUMBER` 模式的文本，将该字段命令为 `duration`
 如模式 `WORD` 表示单词，可以匹配多个字段，但根据实际内容的含义，第一个匹配的文本命名为 `a`，即 `SEMANTIC` 为 `a`，而第二个匹配的文本命名为 `b`
 
+注意匹配
 
-- 模式 pattern
+##### 模式 pattern
 `NUMBER` 模式可以从官方提供的模式中查看：[grok-patterns](https://github.com/logstash-plugins/logstash-patterns-core/blob/main/patterns/ecs-v1/grok-patterns#LL13)
 
 查看文件夹 ecs-v1 中的内容
 
-- 正则表达式
+##### 正则表达式
 pattern 的定义为正则表达式，grok 使用的 regular expression library is Oniguruma，见 [oniguruma](https://github.com/kkos/oniguruma/blob/master/doc/RE)
 
 
-- 自定义模式 Custom Patterns
+##### 自定义模式 Custom Patterns
 如果 grok 官方中没有符合的模式，可以自己定义模式，模式使用 oniguruma 语法
 
 ```bash
@@ -1593,6 +1594,95 @@ filter {
     }
   }
 ```
+上面是官方例子，实际测试时（用 logstash -f 指定文件方式）自定义模式文件所在的目录最好写上绝对路径
+
+
+
+#### match 选项
+> [match](https://www.elastic.co/guide/en/logstash/current/plugins-filters-grok.html#plugins-filters-grok-match)
+
+
+```bash
+filter {
+      grok {
+        match => {
+          "speed" => "Speed: %{NUMBER:speed}"
+          "duration" => "Duration: %{NUMBER:duration}"
+        }
+      }
+    }
+```
+- `match` 选项匹配两个 field：speed 和 duration
+其中 speed 字段中又进行匹配，格式为 `Speed: 数字`，数字命名为 speed
+
+
+- 匹配多个模式
+```bash
+filter {
+    grok {
+      match => {
+        "message" => [
+          "Duration: %{NUMBER:duration}",
+          "Speed: %{NUMBER:speed}"
+        ]
+      }
+    }
+  }
+```
+按照官方写法，对于 nginx 错误日志，用下面的筛选方法：
+```bash
+2023/07/26 11:39:36 [error] 13#0: *1 open() "/data/www/abc" failed (2: No such file or directory), 
+client: 10.0.0.1, server: localhost, request: "GET /abc HTTP/1.1", host: "10.0.0.208:8080"
+```
+
+用下面的筛选方法：
+```bash
+filter {
+    if [tags][0] == "nginx-error" {
+        grok {
+            match => { 
+                "message" => [
+                    "client: %{IP:client_ip}, server: %{HOSTNAME:server_name}, ",
+                    "request: \"%{WORD:request_method} %{URIPATH:requested_page} %{DATA:request_protocol}\", "
+                ]
+            }
+        }
+    }
+    else if [tags][0] == "nginx-access" {
+        drop { }
+    }
+}
+```
+不能筛选出 `"request: \"%{WORD:request_method} %{URIPATH:requested_page} %{DATA:request_protocol}\", "` 部分，
+单独只写其中一行时都可以筛选，合并为一行也可以筛选，但写在一行太长
+
+
+
+
+
+#### overwrite 选项
+> [overwrite](https://www.elastic.co/guide/en/logstash/current/plugins-filters-grok.html#plugins-filters-grok-overwritev)
+
+
+```bash
+filter {
+      grok {
+        match => { "message" => "%{SYSLOGBASE} %{DATA:message}" }
+        overwrite => [ "message" ]
+      }
+    }
+```
+
+
+
+### 例子
+> [Logstash configuration examples](https://www.elastic.co/guide/en/logstash/current/config-examples.html)
+
+
+
+
+
+
 
 
 例如 nginx 错误日志格式如下：
